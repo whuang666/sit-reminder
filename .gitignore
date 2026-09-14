@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 用户自己的配置与统计数据（首次运行自动生成）
+config.json
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 虚拟环境 / 编辑器
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+*.swp
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
