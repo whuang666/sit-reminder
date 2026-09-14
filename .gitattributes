@@ -1,0 +1,17 @@
+# 统一换行符，避免跨平台协作时整个文件显示为改动
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不要做任何转换
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+
+# 打包产物与截图在 diff 里不统计行数
+screenshots/*.png -diff
