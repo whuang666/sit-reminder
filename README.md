@@ -42,7 +42,7 @@
 需要 Python 3.8+（Windows 官方安装包自带 `tkinter`）。
 
 ```bash
-git clone https://github.com/<your-name>/sit-reminder.git
+git clone https://github.com/whuang666/sit-reminder.git
 cd sit-reminder
 ```
 
@@ -184,7 +184,7 @@ Written with nothing but the Python standard library (`tkinter`) — no pip inst
 ### Run
 
 ```bash
-git clone https://github.com/<your-name>/sit-reminder.git
+git clone https://github.com/whuang666/sit-reminder.git
 cd sit-reminder
 pythonw water_break_reminder.py      # or double-click start.bat
 ```
