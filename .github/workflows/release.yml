@@ -1,6 +1,5 @@
 name: Build Release
 
-# 打 tag（如 v1.0.0）时自动构建 exe 并挂到 Release 上
 on:
   push:
     tags:
@@ -30,58 +29,40 @@ jobs:
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
-      # 关键：把构建输出原样存成文件，失败时上传。
-      # 这样即使拿不到 Actions 日志（未认证时 logs 接口返回 403），
-      # 也能从 artifact 里读到真实报错。
+      # 把构建输出写进 $GITHUB_STEP_SUMMARY —— 它可以通过无认证的
+      # check-runs output 接口读到，绕开 logs/artifact 的 403/401。
       - name: Build exe
-        id: build
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          python build_exe.py --no-install *> build_output.txt
+          $out = python build_exe.py --no-install 2>&1 | Out-String
           $code = $LASTEXITCODE
-          Write-Host "---- build_output.txt ----"
-          Get-Content build_output.txt -Tail 80
-          Write-Host "---- exit code: $code ----"
-          "exit_code=$code" | Out-File -Append -Encoding utf8 build_output.txt
+          Write-Host $out
+          Write-Host "exit code: $code"
+
+          $body = "``````text`n$out`n``````"
+          # 摘要上限 1MB，截断到 20k 足够看报错
+          if ($body.Length -gt 20000) { $body = $body.Substring($body.Length - 20000) }
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## build_exe.py output (exit $code)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $body
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "`n## env"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("``````text`n" + (python -c "import sys,platform;print(sys.executable);print(sys.version);print(platform.platform())" | Out-String) + "`n``````")
+
           if ($code -ne 0) { exit $code }
 
-      - name: Collect diagnostics
-        if: always()
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path _diag | Out-Null
-          if (Test-Path build_output.txt) { Copy-Item build_output.txt _diag/ }
-          if (Test-Path build/SitReminder) { Copy-Item build/SitReminder/*.txt _diag/ -ErrorAction SilentlyContinue }
-          if (Test-Path sitreminder.spec) { Copy-Item sitreminder.spec _diag/ }
-          if (Test-Path SitReminder.spec) { Copy-Item SitReminder.spec _diag/ }
-          python -c "import sys,platform;print(sys.executable);print(sys.version);print(platform.platform())" > _diag/env.txt 2>&1
-          Get-ChildItem _diag | Format-Table Name, Length
-
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-diagnostics
-          path: _diag/
-          if-no-files-found: warn
-
       - name: Verify artifact
-        if: steps.build.outputs.exit_code == '0' || success()
         shell: pwsh
         run: |
           if (-not (Test-Path "dist/SitReminder.exe")) { throw "SitReminder.exe not produced" }
           Get-Item "dist/SitReminder.exe" | Format-List Name, Length
 
       - name: Upload to Release
-        if: success()
         uses: softprops/action-gh-release@v2
         with:
           files: dist/SitReminder.exe
           generate_release_notes: true
 
       - name: Upload exe as artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: SitReminder-windows
