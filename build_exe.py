@@ -27,9 +27,23 @@ ICON = os.path.join(HERE, "app.ico")
 NAME = "SitReminder"
 SPEC = os.path.join(HERE, NAME + ".spec")
 
+# CI（英文版 Windows）的 stdout 默认是 cp1252，直接 print 中文会抛
+# UnicodeEncodeError 把脚本打死。这里强制切到 UTF-8，切不动就退回
+# 「无法编码的字符替换掉」，保证任何环境下都不会因为日志而失败。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def log(msg):
-    print(msg, flush=True)
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(msg.encode(enc, "replace").decode(enc, "replace"), flush=True)
+
 
 
 def have_pyinstaller():

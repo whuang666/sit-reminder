@@ -11,6 +11,14 @@ import os
 import subprocess
 import sys
 
+# 英文版 Windows 的 stdout 默认 cp1252，print 中文会抛 UnicodeEncodeError。
+# 强制 UTF-8，失败则退化为「替换掉无法编码的字符」。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import water_break_reminder as W  # noqa: E402
 

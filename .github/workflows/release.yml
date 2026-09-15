@@ -1,10 +1,11 @@
 name: Build Release
 
+# 打 tag（如 v1.0.0）时自动构建 exe 并挂到 Release 上
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
+  workflow_dispatch:      # 也支持手动触发
 
 permissions:
   contents: write
@@ -21,58 +22,16 @@ jobs:
           python-version: "3.12"
           update-environment: true
 
-      # ---- 侦察段：每一步单独落盘，失败也能看到走到哪儿 ----
-      - name: Probe A - interpreter
+      - name: Show interpreter
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path _ci | Out-Null
-          "== which python =="                | Out-File -Encoding utf8 _ci/01.txt
-          (Get-Command python).Source         | Out-File -Append -Encoding utf8 _ci/01.txt
-          "== python -V =="                   | Out-File -Append -Encoding utf8 _ci/01.txt
-          python -V 2>&1 | Out-String         | Out-File -Append -Encoding utf8 _ci/01.txt
-          "== exit code above: $LASTEXITCODE ==" | Out-File -Append -Encoding utf8 _ci/01.txt
-          "== tkinter =="                     | Out-File -Append -Encoding utf8 _ci/01.txt
-          python -c "import tkinter,sys;print(tkinter.TkVersion,sys.executable)" 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/01.txt
-          Get-ChildItem _ci | Format-Table Name,Length | Out-String | Write-Host
-
-      - name: Probe B - files present
-        shell: pwsh
-        run: |
-          "== repo root ==" | Out-File -Append -Encoding utf8 _ci/01.txt
-          Get-ChildItem -Force | Select-Object Name,Length | Format-Table | Out-String | Out-File -Append -Encoding utf8 _ci/01.txt
-          "== i18n.py exists: $(Test-Path i18n.py) ==" | Out-File -Append -Encoding utf8 _ci/01.txt
-          "== app.ico exists: $(Test-Path app.ico) ==" | Out-File -Append -Encoding utf8 _ci/01.txt
+          python -c "import sys, tkinter; print('python  =', sys.executable); print('version =', sys.version); print('tkinter =', tkinter.TkVersion)"
 
       - name: Install PyInstaller
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip pyinstaller *> _ci/02_pip.txt
-          "PIP EXIT=$LASTEXITCODE" | Out-File -Append -Encoding utf8 _ci/02_pip.txt
-          Get-Content _ci/02_pip.txt -Tail 15 | Write-Host
-          python -c "import PyInstaller;print('PyInstaller',PyInstaller.__version__)" 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/02_pip.txt
+        run: python -m pip install --upgrade pip pyinstaller
 
-      - name: Probe C - dry run build_exe
-        shell: pwsh
-        run: |
-          "== build_exe exists: $(Test-Path build_exe.py) ==" | Out-File -Encoding utf8 _ci/03.txt
-          python -c "import ast,io;ast.parse(io.open('build_exe.py',encoding='utf-8').read());print('build_exe.py parses OK')" 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/03.txt
-          "== run build_exe --no-install ==" | Out-File -Append -Encoding utf8 _ci/03.txt
-          python build_exe.py --no-install 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/03.txt
-          "BUILD EXIT=$LASTEXITCODE" | Out-File -Append -Encoding utf8 _ci/03.txt
-          Get-Content _ci/03.txt -Tail 40 | Write-Host
-
-      - name: Publish _ci (always)
-        if: always()
-        shell: pwsh
-        run: |
-          git config user.name "ci-bot"
-          git config user.email "ci@local"
-          git checkout --orphan _ci_report 2>$null
-          git rm -r --cached . -q 2>$null
-          git add -f _ci
-          git commit -m "ci probe for $env:GITHUB_SHA" 2>&1 | Write-Host
-          git push -f origin _ci_report 2>&1 | Write-Host
-        continue-on-error: true
+      - name: Build exe
+        run: python build_exe.py --no-install
 
       - name: Verify artifact
         shell: pwsh
