@@ -25,30 +25,47 @@ jobs:
         shell: pwsh
         run: |
           python -c "import sys, tkinter; print('python  =', sys.executable); print('version =', sys.version); print('tkinter =', tkinter.TkVersion)"
+          python -m pip --version
+          python -c "import PyInstaller" 2>&1 | Out-String | Write-Host
 
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
-      # 把构建输出写进 $GITHUB_STEP_SUMMARY —— 它可以通过无认证的
-      # check-runs output 接口读到，绕开 logs/artifact 的 403/401。
+      - name: Post-install check
+        shell: pwsh
+        run: |
+          Write-Host "after install:"
+          python -c "import PyInstaller, sys; print('PyInstaller', PyInstaller.__version__, 'in', sys.executable)"
+
+      # 把完整输出写进 _ci_report 分支，这样一定能读到报错
       - name: Build exe
+        id: build
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          $out = python build_exe.py --no-install 2>&1 | Out-String
+          python build_exe.py --no-install *> ci_report.txt
           $code = $LASTEXITCODE
-          Write-Host $out
-          Write-Host "exit code: $code"
-
-          $body = "``````text`n$out`n``````"
-          # 摘要上限 1MB，截断到 20k 足够看报错
-          if ($body.Length -gt 20000) { $body = $body.Substring($body.Length - 20000) }
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## build_exe.py output (exit $code)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $body
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "`n## env"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("``````text`n" + (python -c "import sys,platform;print(sys.executable);print(sys.version);print(platform.platform())" | Out-String) + "`n``````")
-
+          Write-Host "exit=$code"
+          Get-Content ci_report.txt -Tail 120
+          "`n===== exit code: $code =====" | Add-Content ci_report.txt
           if ($code -ne 0) { exit $code }
+
+      - name: Publish report to branch (failure path)
+        if: failure()
+        shell: pwsh
+        run: |
+          git config user.name "ci-bot"
+          git config user.email "ci@local"
+          git checkout --orphan _ci_report 2>$null
+          git rm -r --cached . -q 2>$null
+          New-Item -ItemType Directory -Force -Path _ci | Out-Null
+          if (Test-Path ci_report.txt) { Copy-Item ci_report.txt _ci/ }
+          Get-ChildItem build -Recurse -Filter *.txt -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName "_ci/$($_.Name)" }
+          python -c "import sys;print(sys.executable);print(sys.version)" > _ci/env.txt 2>&1
+          git add -f _ci
+          git commit -m "ci report for $env:GITHUB_SHA"
+          git push -f origin _ci_report
+        continue-on-error: true
 
       - name: Verify artifact
         shell: pwsh
