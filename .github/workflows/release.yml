@@ -21,50 +21,57 @@ jobs:
           python-version: "3.12"
           update-environment: true
 
-      - name: Show interpreter
+      # ---- 侦察段：每一步单独落盘，失败也能看到走到哪儿 ----
+      - name: Probe A - interpreter
         shell: pwsh
         run: |
-          python -c "import sys, tkinter; print('python  =', sys.executable); print('version =', sys.version); print('tkinter =', tkinter.TkVersion)"
-          python -m pip --version
-          python -c "import PyInstaller" 2>&1 | Out-String | Write-Host
+          New-Item -ItemType Directory -Force -Path _ci | Out-Null
+          "== which python =="                | Out-File -Encoding utf8 _ci/01.txt
+          (Get-Command python).Source         | Out-File -Append -Encoding utf8 _ci/01.txt
+          "== python -V =="                   | Out-File -Append -Encoding utf8 _ci/01.txt
+          python -V 2>&1 | Out-String         | Out-File -Append -Encoding utf8 _ci/01.txt
+          "== exit code above: $LASTEXITCODE ==" | Out-File -Append -Encoding utf8 _ci/01.txt
+          "== tkinter =="                     | Out-File -Append -Encoding utf8 _ci/01.txt
+          python -c "import tkinter,sys;print(tkinter.TkVersion,sys.executable)" 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/01.txt
+          Get-ChildItem _ci | Format-Table Name,Length | Out-String | Write-Host
+
+      - name: Probe B - files present
+        shell: pwsh
+        run: |
+          "== repo root ==" | Out-File -Append -Encoding utf8 _ci/01.txt
+          Get-ChildItem -Force | Select-Object Name,Length | Format-Table | Out-String | Out-File -Append -Encoding utf8 _ci/01.txt
+          "== i18n.py exists: $(Test-Path i18n.py) ==" | Out-File -Append -Encoding utf8 _ci/01.txt
+          "== app.ico exists: $(Test-Path app.ico) ==" | Out-File -Append -Encoding utf8 _ci/01.txt
 
       - name: Install PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
-
-      - name: Post-install check
         shell: pwsh
         run: |
-          Write-Host "after install:"
-          python -c "import PyInstaller, sys; print('PyInstaller', PyInstaller.__version__, 'in', sys.executable)"
+          python -m pip install --upgrade pip pyinstaller *> _ci/02_pip.txt
+          "PIP EXIT=$LASTEXITCODE" | Out-File -Append -Encoding utf8 _ci/02_pip.txt
+          Get-Content _ci/02_pip.txt -Tail 15 | Write-Host
+          python -c "import PyInstaller;print('PyInstaller',PyInstaller.__version__)" 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/02_pip.txt
 
-      # 把完整输出写进 _ci_report 分支，这样一定能读到报错
-      - name: Build exe
-        id: build
+      - name: Probe C - dry run build_exe
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
-          python build_exe.py --no-install *> ci_report.txt
-          $code = $LASTEXITCODE
-          Write-Host "exit=$code"
-          Get-Content ci_report.txt -Tail 120
-          "`n===== exit code: $code =====" | Add-Content ci_report.txt
-          if ($code -ne 0) { exit $code }
+          "== build_exe exists: $(Test-Path build_exe.py) ==" | Out-File -Encoding utf8 _ci/03.txt
+          python -c "import ast,io;ast.parse(io.open('build_exe.py',encoding='utf-8').read());print('build_exe.py parses OK')" 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/03.txt
+          "== run build_exe --no-install ==" | Out-File -Append -Encoding utf8 _ci/03.txt
+          python build_exe.py --no-install 2>&1 | Out-String | Out-File -Append -Encoding utf8 _ci/03.txt
+          "BUILD EXIT=$LASTEXITCODE" | Out-File -Append -Encoding utf8 _ci/03.txt
+          Get-Content _ci/03.txt -Tail 40 | Write-Host
 
-      - name: Publish report to branch (failure path)
-        if: failure()
+      - name: Publish _ci (always)
+        if: always()
         shell: pwsh
         run: |
           git config user.name "ci-bot"
           git config user.email "ci@local"
           git checkout --orphan _ci_report 2>$null
           git rm -r --cached . -q 2>$null
-          New-Item -ItemType Directory -Force -Path _ci | Out-Null
-          if (Test-Path ci_report.txt) { Copy-Item ci_report.txt _ci/ }
-          Get-ChildItem build -Recurse -Filter *.txt -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName "_ci/$($_.Name)" }
-          python -c "import sys;print(sys.executable);print(sys.version)" > _ci/env.txt 2>&1
           git add -f _ci
-          git commit -m "ci report for $env:GITHUB_SHA"
-          git push -f origin _ci_report
+          git commit -m "ci probe for $env:GITHUB_SHA" 2>&1 | Write-Host
+          git push -f origin _ci_report 2>&1 | Write-Host
         continue-on-error: true
 
       - name: Verify artifact
