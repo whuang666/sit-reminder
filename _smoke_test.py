@@ -61,6 +61,33 @@ app.toggle_pause(); assert app.state == "paused"
 app.toggle_pause(); assert app.state == "running"
 print("[ok] 暂停/继续")
 
+# 休息暂停：暂停期间倒计时不动，恢复后继续走
+app.start_break()
+root.update()
+assert app.state == "break" and app.break_paused is False
+app.break_remaining = 60
+app.set_break_paused(True)
+assert app.state == "break", app.state
+assert app.break_pause_btn.cget("text") == app.T("btn_resume")
+assert app.pause_btn.cget("text") == app.T("btn_resume")
+for _ in range(3):
+    app.tick()
+root.update()
+assert app.break_remaining == 60, app.break_remaining
+app.set_break_paused(False)
+assert app.break_pause_btn.cget("text") == app.T("btn_pause")
+app.tick()
+root.update()
+assert app.break_remaining == 59, app.break_remaining
+print("[ok] 休息暂停/继续, 暂停 3 秒倒计时不动, 恢复后继续")
+
+# 暂停状态下收尾：标志要复位，不能带进下一轮
+app.set_break_paused(True)
+app.finish_break(True)
+root.update()
+assert app.state == "running" and app.break_paused is False
+print("[ok] 休息暂停后结束, 暂停标志已复位")
+
 # 设置窗口
 app.open_settings()
 root.update()

@@ -126,6 +126,13 @@ def render_lang(lang, out, tip_id="hip_flexor", extra_id="chin_tuck"):
     pump(20)
     capture(app.break_win, os.path.join(out, "%s_break.png" % lang))
 
+    # 休息暂停态：色条转琥珀、按钮变「继续」
+    app.set_break_paused(True)
+    pump(12)
+    capture(app.break_win, os.path.join(out, "%s_break_paused.png" % lang))
+    app.set_break_paused(False)
+    pump(6)
+
     app.finish_break(count=False)
     pump(6)
     app.open_settings()

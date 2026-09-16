@@ -16,8 +16,8 @@ python water_break_reminder.py --lang=en   # 强制指定语言
 python water_break_reminder.py --selftest  # 构建全部界面后立即退出，用于验证
 
 # 验证（改完代码务必都跑一遍）
-python _smoke_test.py                      # 13 项功能冒烟测试
-python tools/verify_layout.py              # 208 组合排版校验（4 语言 × 13 动作 × 4 顺便）
+python _smoke_test.py                      # 15 项功能冒烟测试
+python tools/verify_layout.py              # 416 组合排版校验（4 语言 × 13 动作 × 4 顺便 × 2 态）
 python tools/autostart.py verify           # 真跑一次开机自启命令
 
 # 打包
@@ -38,7 +38,7 @@ build_exe.py              # 生成 .spec 后调 PyInstaller
 tools/                    # 开发期辅助脚本（不参与打包）
   autostart.py            #   自启的命令行管理：status / on / off / verify
   capture_ui.py           #   无遮挡窗口截图（Win32 PrintWindow）
-  verify_layout.py        #   穷举文案组合，检测内容溢出
+  verify_layout.py        #   穷举 416 种文案/状态组合，检测内容溢出
   dpi_probe.py            #   三种 DPI 模式对比诊断
   make_icon.py            #   生成 app.ico
 _smoke_test.py            # 功能冒烟测试
@@ -46,15 +46,38 @@ _smoke_test.py            # 功能冒烟测试
 
 ### 计时状态机
 
-`running` →（计时归零）→ `break` →（倒计时结束 或 点「我已完成休息」）→ `running`
+```
+running ──(计时归零)──> break ──(倒计时结束 / 我已完成休息)──> running
+```
+
+`state` 只有三个取值：`running` / `paused` / `break`。
+
+**休息暂停**不用第四个状态，而是 `state == "break"` + 布尔量 `break_paused`：
+
+```python
+bp = (self.state == "break" and self.break_paused)
+```
+
+这样所有 `if self.state == "break"` 的判断（弹窗是否开着、能不能重置等）都不用改。
+`tick()` 里 `if not self.break_paused:` 才走倒计时。新增涉及「休息中」的逻辑时，
+记得同时考虑 `break_paused`——配色、提示语、按钮文案都要分两态。
 
 旁路操作：
+
 - `pause` / `resume` —— 停在当前进度，不重置
 - `snooze` —— 从 `break` 回到 `running`，剩余时间 = `snooze_minutes`
 - `skip` —— 跳过本次，剩余时间 = 1 分钟
 - `break_now` —— 立即进入 `break`
 
-状态文案由 `st_running` / `st_break` / `st_paused` 三个键控制。
+状态文案由 `st_running` / `st_break` / `st_paused` 三个键控制；休息暂停时弹窗标题用
+`break_paused`，主窗口复用 `paused_hint`。
+
+**暂停/继续只有一个入口**：`toggle_pause()`，它按当前 state 分派。主窗口按钮、
+休息弹窗按钮、空格键都调它，保证行为一致。
+
+**离开 break 必须复位 `break_paused`**：`finish_break()` 和 `delay_break()` 里都有
+`self.break_paused = False`，新增任何退出休息的路径时别忘了这一点，否则暂停状态会
+带到下一轮计时。
 
 ## 必须遵守的约定
 
@@ -119,6 +142,16 @@ PYTHONIOENCODING=cp1252 python build_exe.py --no-install
 - **测试时不要共用同一个 `tk.Tk()` 根**。多个 `ReminderApp` 堆在一个 root 上会让 `winfo_reqheight()` 累加出假高度（曾量到 1410px，实际只有 437px）。每个语言/场景建独立 `Tk()` 并销毁。
 - **GUI 需要带 tkinter 的 Python**。部分精简发行版（含 WorkBuddy 托管的 Python）没有 tkinter，`import tkinter` 直接失败。
 - **截当前窗口要用 `PrintWindow(hwnd, memDC, 2)`**（`PW_RENDERFULLCONTENT`）+ `GetDIBits`。且必须显式声明 ctypes `argtypes`，否则 64 位句柄会溢出报 `OverflowError`。
+- **给 Toplevel 绑快捷键要防按钮抢键**。点击 Tk 按钮会让它获得焦点，此时按 `空格`
+  会先被 Button 的类绑定消费掉一次，再冒泡到 Toplevel 绑定，**同一次按键触发两遍**
+  （连按两下 = 没按）。所以绑的处理器要判 `event.widget`：
+
+  ```python
+  def _key_pause(self, event):
+      if isinstance(event.widget, tk.Button):   # 按钮已处理，别重复触发
+          return
+      self.toggle_pause()
+  ```
 
 ### 打包相关
 
@@ -155,5 +188,6 @@ git tag -a v1.0.1 -m "..." && git push origin v1.0.1
 
 1. `python _smoke_test.py` —— 功能没坏
 2. `python tools/verify_layout.py` —— 没有文案溢出
-3. 改动了界面文案或排版 → `python tools/capture_ui.py` 更新截图
+3. 改动了界面文案或排版 → `python tools/capture_ui.py` 更新截图（每语言 4 张：
+   主窗 / 休息 / 休息暂停 / 设置）
 4. 改动了 CI 或构建脚本 → 用上面的 `PYTHONIOENCODING=cp1252` 先本地过一遍

@@ -5,9 +5,10 @@
 纯 Python 标准库（`tkinter`）写成，**不装任何第三方包**，克隆下来双击就能跑。支持 **中文 / English / 日本語 / 한국어** 四种界面语言，可开机自启。
 
 <p align="center">
-  <img src="screenshots/zh_main.png" width="270" alt="主窗口">
-  <img src="screenshots/zh_break.png" width="270" alt="提醒弹窗">
-  <img src="screenshots/zh_settings.png" width="270" alt="设置">
+  <img src="screenshots/zh_main.png" width="240" alt="主窗口">
+  <img src="screenshots/zh_break.png" width="240" alt="提醒弹窗">
+  <img src="screenshots/zh_break_paused.png" width="240" alt="休息暂停">
+  <img src="screenshots/zh_settings.png" width="240" alt="设置">
 </p>
 
 ---
@@ -27,13 +28,21 @@
 | 👀 顺便一条 | 每次附赠 1 条小习惯（20-20-20 远眺、4-7-8 深呼吸、收下巴、转脚踝） |
 | ⏳ 休息时长 | 默认 3 分钟，可设 1–30 分钟，带倒计时 |
 | 💤 稍后提醒 | 默认 5 分钟，可设 1–60 分钟 |
-| ⏸ 暂停 / 继续 | 开会、专注时一键暂停，不丢当前进度 |
+| ⏸ 暂停 / 继续 | 计时中和**休息倒计时**都能暂停。被叫走、临时开会时按一下，倒计时停住不流失，回来点「继续」接着休 |
 | 📊 今日统计 | 记录今天休息了几次、跳过了几次 |
-| 🔔 提示音 | 可开关 |
+| 🔔 提示音 | 可开关（暂停后自动安静下来） |
 | 🪟 位置记忆 | 主窗口拖到哪儿下次就还在哪儿 |
 | 🚀 开机自启 | 写当前用户注册表，免管理员；路径失效能自动识别 |
 | 🌐 四语言 | 中文 / English / 日本語 / 한국어，设置里点了立即切换，默认跟随系统 |
 | 🖥 高 DPI | 自动按屏幕缩放比例调整尺寸，2K/4K 屏不发虚不折行 |
+
+### 键盘
+
+| 按键 | 作用 |
+| --- | --- |
+| `空格` | 暂停 / 继续（计时和休息通用） |
+| `Enter` | 休息弹窗：我已完成休息 |
+| `Esc` | 休息弹窗：稍后提醒；主窗口：最小化 |
 
 ## 快速开始
 
@@ -129,8 +138,8 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 ├── config.example.json         # 配置示例
 ├── 开机自启-开启.bat           # 注册自启
 ├── 开机自启-关闭.bat           # 取消自启
-├── _smoke_test.py              # 13 项功能冒烟测试
-├── screenshots/                # 四语言界面截图
+├── _smoke_test.py              # 15 项功能冒烟测试
+├── screenshots/                # 四语言界面截图（含休息暂停态）
 ├── .github/workflows/release.yml   # 打 tag 自动构建并发布 exe
 └── tools/
     ├── autostart.py            # 命令行管理自启（status / on / off / verify）
@@ -177,9 +186,11 @@ Written with nothing but the Python standard library (`tkinter`) — no pip inst
 - Configurable interval (1–240 min, default 45), break length (1–30 min), snooze (1–60 min)
 - 13 randomized stretches covering lower back, obliques, neck/shoulders and circulation — each with concrete instructions
 - One extra micro-habit per reminder (20-20-20 eye rest, 4-7-8 breathing, chin tuck, ankle circles)
-- Pause / resume, skip, break-now, daily stats, sound toggle, window position memory
+- Pause / resume the work timer **or the break countdown** — step away mid-break without burning it
+- Skip, break-now, daily stats, sound toggle, window position memory
 - Start at logon via `HKCU\...\Run` — no admin rights, detects broken paths
 - Per-monitor DPI aware; stays crisp on 2K/4K displays
+- Keyboard: `Space` pause/resume, `Enter` finish break, `Esc` snooze / minimize
 
 ### Run
 
