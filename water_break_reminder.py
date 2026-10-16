@@ -198,6 +198,7 @@ class ReminderApp:
         self.remaining = self.conf["work_minutes"] * 60
         self.break_remaining = 0
         self.break_paused = False        # 休息倒计时是否暂停（state 仍为 break）
+        self.break_done = False          # 休息倒计时已归零、在等手动确认（state 仍为 break）
         self.break_win = None
         self.ringing = False
         self.flash_on = False
@@ -351,15 +352,21 @@ class ReminderApp:
         self.refresh_main()
 
     def mkbtn(self, parent, text, cmd, color):
-        """扁平按钮 + 悬停反馈"""
+        """扁平按钮 + 悬停反馈（禁用时保持常灰，不跟随悬停变色）"""
         hover = HOVER.get(color, color)
         b = tk.Button(parent, text=text, command=cmd, bg=color, fg="#ffffff",
                       activebackground=color, activeforeground="#ffffff",
+                      disabledforeground=MUTED,
                       font=(self.f, 9), relief="flat", bd=0, cursor="hand2",
                       takefocus=0, padx=self.P(14), pady=self.P(7))
-        b.bind("<Enter>", lambda e: b.config(bg=hover))
-        b.bind("<Leave>", lambda e: b.config(bg=color))
+        b.bind("<Enter>", lambda e, b=b: self._btn_hover(b, hover))
+        b.bind("<Leave>", lambda e, b=b: self._btn_hover(b, color))
         return b
+
+    @staticmethod
+    def _btn_hover(b, color):
+        if str(b.cget("state")) != "disabled":
+            b.config(bg=color)
 
     def apply_icon(self, win, as_default=False):
         """套用 app.ico（缺失就跳过）"""
@@ -377,14 +384,19 @@ class ReminderApp:
     # ---------- 刷新主界面 ----------
     def refresh_main(self):
         bp = (self.state == "break" and self.break_paused)
+        bd = (self.state == "break" and self.break_done)
         if self.state == "break":
             self.count_lbl.config(text=fmt(self.break_remaining),
-                                  fg=AMBER if bp else GREEN)
-            self.hint_lbl.config(text=self.T("paused_hint") if bp
-                                 else self.T("break_hint"))
-            self.state_dot.config(text=self.T("st_paused") if bp
-                                  else self.T("st_break"),
-                                  fg=AMBER if bp else GREEN)
+                                  fg=ACCENT if bd else (AMBER if bp else GREEN))
+            if bd:
+                self.hint_lbl.config(text=self.T("break_done_hint"))
+                self.state_dot.config(text=self.T("st_break_done"), fg=ACCENT)
+            elif bp:
+                self.hint_lbl.config(text=self.T("paused_hint"))
+                self.state_dot.config(text=self.T("st_paused"), fg=AMBER)
+            else:
+                self.hint_lbl.config(text=self.T("break_hint"))
+                self.state_dot.config(text=self.T("st_break"), fg=GREEN)
         else:
             self.count_lbl.config(text=fmt(self.remaining),
                                   fg=MUTED if self.state == "paused" else FG)
@@ -396,10 +408,16 @@ class ReminderApp:
                                     time.localtime(time.time() + self.remaining))
                 self.hint_lbl.config(text=self.T("next_at", t=nxt))
                 self.state_dot.config(text=self.T("st_running"), fg=GREEN)
-        # 休息暂停时，主窗口的按钮也要显示「继续」
-        self.pause_btn.config(text=self.T("btn_resume")
-                              if (self.state == "paused" or bp)
-                              else self.T("btn_pause"))
+        # 休息暂停时，主窗口的按钮也要显示「继续」；
+        # 到点待确认时倒计时已经停了，暂停按钮没有意义，直接置灰
+        if bd:
+            self.pause_btn.config(text=self.T("btn_pause"), state="disabled",
+                                  bg=CARD2, fg=MUTED)
+        else:
+            self.pause_btn.config(text=self.T("btn_resume")
+                                  if (self.state == "paused" or bp)
+                                  else self.T("btn_pause"),
+                                  state="normal", bg=ACCENT, fg="#ffffff")
 
         total = max(1, self.conf["work_minutes"] * 60)
         seated = int(round((total - max(0, self.remaining)) / 60.0))
@@ -411,6 +429,8 @@ class ReminderApp:
                         *self._rect_pts(self.bar_w * ratio, self.P(8), self.P(4)))
         if bp:
             color = AMBER
+        elif bd:
+            color = ACCENT
         elif self.state == "break":
             color = GREEN
         elif self.state == "paused":
@@ -442,14 +462,13 @@ class ReminderApp:
             self.remaining -= 1
             if self.remaining <= 0:
                 self.start_break()
-        elif self.state == "break":
-            if not self.break_paused:
-                self.break_remaining -= 1
-                if self.break_win and self.break_win.winfo_exists():
-                    self.break_lbl.config(text=fmt(self.break_remaining))
-                    self.update_break_bar()
-                    if self.break_remaining <= 0:
-                        self.finish_break(count=True)
+        elif self.state == "break" and not (self.break_paused or self.break_done):
+            self.break_remaining -= 1
+            if self.break_win and self.break_win.winfo_exists():
+                self.break_lbl.config(text=fmt(self.break_remaining))
+                self.update_break_bar()
+            if self.break_remaining <= 0:
+                self.on_break_timeup()
         self.refresh_main()
         self.root.after(1000, self.tick)
 
@@ -459,6 +478,8 @@ class ReminderApp:
         elif self.state == "paused":
             self.state = "running"
         elif self.state == "break":
+            if self.break_done:          # 倒计时已经到点，没什么可暂停的
+                return
             self.set_break_paused(not self.break_paused)
             return
         self.refresh_main()
@@ -475,7 +496,7 @@ class ReminderApp:
 
     def set_break_paused(self, on):
         """暂停/继续休息倒计时（弹窗与主窗口的暂停按钮都走这里）"""
-        if self.state != "break":
+        if self.state != "break" or self.break_done:
             return
         self.break_paused = bool(on)
         if self.break_paused:
@@ -483,12 +504,48 @@ class ReminderApp:
         self._sync_break_ui()
         self.refresh_main()
 
-    def _sync_break_ui(self):
-        """把暂停状态同步到休息弹窗（倒计时配色、标签、按钮文案、顶部色条）"""
+    def on_break_timeup(self):
+        """休息倒计时归零：不自动开始工作计时，停在 00:00 等用户手动确认。
+
+        这样万一实际休息超时（排队接水之类），工作计时不会在你还没坐下时
+        就悄悄跑掉几分钟。
+        """
+        self.break_done = True
+        self.break_remaining = 0
+        self.break_paused = False
+        self.stop_ring()                 # 到点先安静下来，别一直响
+        self._sync_break_ui()
+        self._fit_break_win()            # 多出一行提示语，按内容重新定高
+        self.refresh_main()
+
+    def _fit_break_win(self):
+        """按当前内容重新给休息弹窗定尺寸（窗口禁止手动缩放，只能自己量）"""
         w = self.break_win
         if not (w and w.winfo_exists()):
             return
-        if self.break_paused:
+        w.update_idletasks()
+        W = self.P(520)
+        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        H = min(w.winfo_reqheight(), sh - self.P(90))
+        w.geometry("%dx%d+%d+%d" % (W, H, (sw - W) // 2, max(0, (sh - H) // 3)))
+
+    def _sync_break_ui(self):
+        """把当前状态同步到休息弹窗（倒计时数字、配色、标签、按钮、色条、待确认提示）"""
+        w = self.break_win
+        if not (w and w.winfo_exists()):
+            return
+        # 数字和进度条按当前剩余量重算：tick 之外的入口（截图/自检/校验）也要显示对
+        self.break_lbl.config(text=fmt(self.break_remaining))
+        self.update_break_bar()
+        if self.break_done:
+            # 到点：停在 00:00，收起「暂停」，提示手动确认后才开下一轮
+            self.break_lbl.config(fg=ACCENT)
+            self.break_state_lbl.config(text=self.T("break_done_state"), fg=ACCENT)
+            self.break_pause_btn.pack_forget()
+            self.break_hint_lbl.config(text=self.T("break_done_hint"))
+            self.break_hint_lbl.pack(pady=(self.P(6), 0))
+            self.banner.config(bg=GREEN)
+        elif self.break_paused:
             self.break_lbl.config(fg=AMBER)
             self.break_state_lbl.config(text=self.T("break_paused"), fg=AMBER)
             self.break_pause_btn.config(text=self.T("btn_resume"))
@@ -512,6 +569,7 @@ class ReminderApp:
         self.state = "break"
         self.break_remaining = self.conf["break_minutes"] * 60
         self.break_paused = False
+        self.break_done = False
         self.tip_id = random.choice(TIP_ORDER)
         self.extra_id = self.pick_extra()
         self.snoozed = False
@@ -590,6 +648,10 @@ class ReminderApp:
         self.break_lbl = tk.Label(cd, text=fmt(self.break_remaining), bg=BG,
                                   fg=GREEN, font=(self.m, 28, "bold"))
         self.break_lbl.pack(pady=(self.P(2), 0))
+        # 到点待确认时才 pack 出来的一行提示；先建好，保证排版顺序在倒计时下面
+        self.break_hint_lbl = tk.Label(cd, text="", bg=BG, fg=ACCENT,
+                                       font=(self.f, 10), wraplength=text_w,
+                                       justify="center")
 
         bh = self.P(6)
         self.break_bar = tk.Canvas(w, width=inner, height=bh, bg=BG,
@@ -697,6 +759,7 @@ class ReminderApp:
         self.stop_ring()
         self.close_break_win()
         self.break_paused = False
+        self.break_done = False
         if count:
             self.today_stats()["done"] += 1
         self.state = "running"
@@ -708,6 +771,7 @@ class ReminderApp:
         self.stop_ring()
         self.close_break_win()
         self.break_paused = False
+        self.break_done = False
         if skip:
             self.today_stats()["skip"] += 1
             delay = self.conf["work_minutes"] * 60 - self.conf["snooze_minutes"] * 60
@@ -896,6 +960,13 @@ class ReminderApp:
 
 
 def main():
+    # 自检输出含中文，控制台编码可能是 cp1252（英文 Windows）/cp936，先兜住
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
@@ -910,25 +981,37 @@ def main():
 
     if selftest:
         # 走一遍完整排版路径（含最复杂的休息弹窗），并断言内容没被裁切
+        def probe():
+            """量当前弹窗 -> (宽, 高, 内容底边, 有没有子控件)"""
+            for _ in range(6):
+                root.update()
+                time.sleep(0.03)
+            bw.update_idletasks()
+            kids = bw.winfo_children()
+            bottom = (kids[-1].winfo_y() + kids[-1].winfo_height()) if kids else 0
+            return bw.winfo_width(), bw.winfo_height(), bottom, bool(kids)
+
         app.conf["sound"] = False
         app.start_break()
-        for _ in range(8):
-            root.update()
-            time.sleep(0.03)
         bw = app.break_win
-        bw.update_idletasks()
-        bh = bw.winfo_height()
-        kids = bw.winfo_children()
-        bottom = kids[-1].winfo_y() + kids[-1].winfo_height() if kids else 0
-        ok = bool(kids) and bottom <= bh
+        W1, H1, b1, has1 = probe()
+        ok = has1 and b1 <= H1
         print("自检%s：[%s] 主窗 %dx%d，弹窗 %dx%d（按钮底边 %d），"
               "动作库 %d 条，自启 %s"
               % ("通过" if ok else "失败（弹窗内容被裁切）", app.lang,
                  root.winfo_width(), root.winfo_height(),
-                 bw.winfo_width(), bh, bottom,
-                 len(i18n.TIP_ORDER), autostart_status()[0]))
+                 W1, H1, b1, len(i18n.TIP_ORDER), autostart_status()[0]))
         if not ok:
             print("（提示：内容被裁切，请检查该语言的文案长度）")
+
+        # 再压一遍「休息到点、等手动确认」态：会多出一行提示，最容易顶出窗口
+        app.on_break_timeup()
+        W2, H2, b2, has2 = probe()
+        ok2 = has2 and b2 <= H2
+        print("      休息到点待确认态：弹窗 %dx%d（按钮底边 %d）%s"
+              % (W2, H2, b2, "通过" if ok2 else "失败（被裁切）"))
+        ok = ok and ok2
+
         app.stop_ring()
         root.destroy()
         return 0 if ok else 1

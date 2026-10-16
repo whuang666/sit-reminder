@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 穷举排版校验（多语言版）
-对 4 种语言 × 13 个主动作 × 4 条顺便提示 × 2 种状态（正常/休息暂停）= 416 种组合
-逐一渲染休息弹窗，检查：
+对 4 种语言 × 13 个主动作 × 4 条顺便提示 × 3 种状态（正常/休息暂停/休息到点待确认）
+= 624 种组合逐一渲染休息弹窗，检查：
   1) 纵向：最底部控件底边不超过客户区高度
   2) 横向：任一后代控件的右边缘不超过客户区宽度（多语言文案更长，最容易在这里溢出）
-另外用最长文案压一遍主窗口（含休息暂停态），检查横向溢出。
+另外用最长文案压一遍主窗口（含休息暂停态与到点待确认态），检查横向溢出。
 用法：python tools/verify_layout.py
 """
 import ctypes
@@ -70,12 +70,13 @@ def measure(bw):
 
 
 def check_popups(lang):
-    """某一语言下的全部动作组合 × 正常/暂停两态 -> (通过数, 总数, 失败明细, 字体, 弹窗宽)"""
+    """某一语言下的全部动作组合 × 正常/暂停/到点待确认三态
+    -> (通过数, 总数, 失败明细, 字体, 弹窗宽)"""
     root = tk.Tk()
     app = W.ReminderApp(root, lang=lang)
     app.conf["sound"] = False
     ok, fails = 0, []
-    n = len(i18n.TIP_ORDER) * len(i18n.EXTRA_ORDER) * 2
+    n = len(i18n.TIP_ORDER) * len(i18n.EXTRA_ORDER) * 3
 
     for tid in i18n.TIP_ORDER:
         for eid in i18n.EXTRA_ORDER:
@@ -87,21 +88,18 @@ def check_popups(lang):
             pump(root)
             bw = app.break_win
 
-            # 正常态
-            Wc, Hc, bottom, bad = measure(bw)
-            if bottom > Hc or bad:
-                fails.append((tid, eid, "running", Wc, Hc, bottom, bad[:3]))
-            else:
-                ok += 1
-
-            # 暂停态：倒计时标题换文案、按钮「暂停」->「继续」、色条转琥珀
-            app.set_break_paused(True)
-            pump(root, 3)
-            Wc, Hc, bottom, bad = measure(bw)
-            if bottom > Hc or bad:
-                fails.append((tid, eid, "paused", Wc, Hc, bottom, bad[:3]))
-            else:
-                ok += 1
+            # 三态：正常 / 休息暂停 / 休息到点待确认（多一行提示，最容易顶出窗口）
+            for name, setup in (("running", None),
+                                ("paused", lambda: app.set_break_paused(True)),
+                                ("timeup", app.on_break_timeup)):
+                if setup:
+                    setup()
+                    pump(root, 3)
+                Wc, Hc, bottom, bad = measure(bw)
+                if bottom > Hc or bad:
+                    fails.append((tid, eid, name, Wc, Hc, bottom, bad[:3]))
+                else:
+                    ok += 1
 
             app.finish_break(count=False)
             pump(root, 2)
@@ -139,6 +137,18 @@ def check_main(lang):
     app.state = "running"
     app.break_paused = False
 
+    # 休息到点待确认态：提示语变「点"我已完成休息"…」，暂停按钮置灰
+    app.state = "break"
+    app.break_paused = False
+    app.break_done = True
+    app.break_remaining = 0
+    app.refresh_main()
+    pump(root, 6)
+    Wm3, Hm3 = root.winfo_width(), root.winfo_height()
+    hbad += [b for b in overflow_widgets(root, Wm3, Hm3) if b[2] > Wm3 + 1]
+    app.state = "running"
+    app.break_done = False
+
     app.stop_ring()
     root.destroy()
     return Wm, Hm, hbad
@@ -171,7 +181,7 @@ print()
 if worst:
     print("主窗口存在横向溢出 ✘")
     sys.exit(1)
-print("排版校验通过 ✔（4 语言 × 13 动作 × 4 顺便 × 2 态 = %d 种弹窗组合，"
+print("排版校验通过 ✔（4 语言 × 13 动作 × 4 顺便 × 3 态 = %d 种弹窗组合，"
       "全部不裁切、不溢出）" % total)
 if os.path.exists(W.CONF_PATH):
     os.remove(W.CONF_PATH)

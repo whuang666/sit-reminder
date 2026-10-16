@@ -30,14 +30,38 @@ assert app.state == "break", app.state
 assert app.break_win is not None and app.break_win.winfo_exists()
 print("[ok] 计时归零触发弹窗, state =", app.state, "休息倒计时 =", W.fmt(app.break_remaining))
 
-# 休息倒计时走到 0 自动结束
+# 休息倒计时走到 0：不再自动开始工作计时，停住等手动确认
 app.break_remaining = 1
 app.tick()
 root.update()
-assert app.state == "running", app.state
+assert app.state == "break", app.state
+assert app.break_done is True
+assert app.break_win is not None and app.break_win.winfo_exists()
+assert app.break_remaining == 0, app.break_remaining
+assert app.break_lbl.cget("text") == "00:00", app.break_lbl.cget("text")
+assert app.break_state_lbl.cget("text") == app.T("break_done_state")
+assert app.today_stats()["done"] == 0, app.today_stats()   # 没确认就不算完成
+app.tick()
+app.tick()
+app.set_break_paused(True)      # 已经停了，这时按「暂停」应当无效
+root.update()
+assert app.state == "break" and app.break_remaining == 0
+assert app.break_paused is False and app.break_done is True
+assert app.break_hint_lbl.winfo_manager() == "pack"        # 提示语已露出来
+assert app.break_pause_btn.winfo_manager() == ""           # 「暂停」已收起
+assert str(app.pause_btn.cget("state")) == "disabled"      # 主窗口的也置灰
+print("[ok] 休息到点不自动开始下一轮, 停在 00:00 等手动确认")
+
+# 手动点「我已完成休息」才重新开始计时
+app.finish_break(True)
+root.update()
+assert app.state == "running" and app.break_done is False
 assert app.break_win is None
+assert app.remaining == app.conf["work_minutes"] * 60, app.remaining
 assert app.today_stats()["done"] == 1, app.today_stats()
-print("[ok] 休息结束自动回到工作, 今日完成 =", app.today_stats()["done"])
+assert str(app.pause_btn.cget("state")) == "normal"
+print("[ok] 手动确认后回到工作计时 =", W.fmt(app.remaining),
+      "今日完成 =", app.today_stats()["done"])
 
 # 手动弹窗 + 延后
 app.start_break()

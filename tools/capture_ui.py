@@ -9,6 +9,7 @@
 """
 import ctypes
 import os
+import random
 import sys
 import tempfile
 import time
@@ -102,10 +103,12 @@ def capture(win, path):
 
 
 def render_lang(lang, out, tip_id="hip_flexor", extra_id="chin_tuck"):
-    """渲染某一个语言的三个界面并截图"""
+    """渲染某一个语言的五个界面并截图"""
     W.CONF_PATH = os.path.join(tempfile.gettempdir(), "wbr_shot_%s.json" % lang)
     if os.path.exists(W.CONF_PATH):
         os.remove(W.CONF_PATH)
+    # start_break() 每次随机抽动作，固定种子让截图可复现（否则重跑一次全变）
+    random.seed(20261016 + i18n.LANGS.index(lang))
 
     root = tk.Tk()
     app = W.ReminderApp(root, lang=lang)
@@ -132,6 +135,11 @@ def render_lang(lang, out, tip_id="hip_flexor", extra_id="chin_tuck"):
     capture(app.break_win, os.path.join(out, "%s_break_paused.png" % lang))
     app.set_break_paused(False)
     pump(6)
+
+    # 休息到点待确认态：停在 00:00、收起「暂停」、多一行提示语
+    app.on_break_timeup()
+    pump(12)
+    capture(app.break_win, os.path.join(out, "%s_break_timeup.png" % lang))
 
     app.finish_break(count=False)
     pump(6)
